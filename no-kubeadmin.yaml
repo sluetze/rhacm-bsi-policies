@@ -1,0 +1,30 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: policy-remove-kubeadmin
+  namespace: sluetzen-cluster-set
+  annotations:
+    policy.open-cluster-management.io/categories: Least Privilege
+    policy.open-cluster-management.io/controls: APP.4.4.A3
+    policy.open-cluster-management.io/standards: BSI-APP.4.4
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: policy-remove-kubeadmin
+        spec:
+          object-templates:
+            - objectDefinition:
+                apiVersion: v1
+                kind: Secret
+                metadata:
+                  name: kubeadmin
+                  namespace: kube-system
+                type: Opaque
+              complianceType: mustnothave
+          remediationAction: inform
+          severity: low
+  remediationAction: inform
