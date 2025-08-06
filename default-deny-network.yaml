@@ -1,0 +1,42 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-default-deny-network-policy
+  namespace: sluetzen-cluster-set
+  annotations:
+    policy.open-cluster-management.io/categories: network-segmentation
+    policy.open-cluster-management.io/controls: SYS.1.6.A5, APP.4.4.A7
+    policy.open-cluster-management.io/standards: BSI-APP.4.4, BSI-SYS.1.6
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: default-deny-network-config
+        spec:
+          object-templates:
+            - objectDefinition:
+                apiVersion: networking.k8s.io/v1
+                kind: NetworkPolicy
+                metadata:
+                  name: default-deny-all
+                spec:
+                  podSelector: {}
+                  policyTypes:
+                    - Ingress
+                    - Egress
+              complianceType: musthave
+          remediationAction: inform
+          severity: high
+          namespaceSelector:
+            exclude:
+              - kube-*
+              - open-cluster-management
+              - open-cluster-management-*
+              - openshift-*
+              - default
+            include:
+              - "*"
+  remediationAction: inform
