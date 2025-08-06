@@ -1,0 +1,450 @@
+---
+# Policy for BSI SYS.1.6.A3: Secure Use of Containerized IT Systems (Enforce Restricted SCC)
+# This policy ensures that all pods in managed namespaces use the 'restricted' Security Context Constraint.
+# This helps maintain strict multi-tenancy and isolation as recommended by BSI.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-restricted-scc-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A3"
+    purpose: "enforce-restricted-scc"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: restricted-scc-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: RoleBinding
+                metadata:
+                  name: restricted-scc-rolebinding
+                  namespace: "{{ .ManagedCluster.Name }}-{{ .ManagedCluster.Namespace }}" # Applies to each managed cluster's namespace
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: system:openshift:scc:restricted
+                subjects:
+                  - kind: Group
+                    apiGroup: rbac.authorization.k8s.io
+                    name: system:authenticated
+---
+# Policy for BSI SYS.1.6.A5 & APP.4.4.A7: Network Segmentation (Default Deny Network Policy)
+# This policy enforces a default-deny network policy within application namespaces,
+# requiring explicit whitelisting for all network communication.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-default-deny-network-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A5, APP.4.4.A7"
+    purpose: "network-segmentation"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: default-deny-network-config
+        spec:
+          remediationAction: inform
+          severity: high
+          namespaceSelector:
+            exclude: ["kube-*", "open-cluster-management", "openshift-*", "default"] # Exclude system namespaces
+            include: ["*"] # Apply to all other namespaces
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: networking.k8s.io/v1
+                kind: NetworkPolicy
+                metadata:
+                  name: default-deny-all
+                  namespace: "{{ .ManagedCluster.Name }}-{{ .ManagedCluster.Namespace }}" # Applies to each managed cluster's namespace
+                spec:
+                  podSelector: {} # Selects all pods in the namespace
+                  policyTypes:
+                    - Ingress
+                    - Egress
+---
+# Policy for BSI SYS.1.6.A6 & SYS.1.6.A12: Use of Secure Images (Trusted Image Registry)
+# This policy enforces that images can only be pulled from a trusted internal registry,
+# preventing the use of images from untrusted external sources.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-trusted-image-registry-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A6, SYS.1.6.A12"
+    purpose: "trusted-image-sources"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: trusted-image-registry-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operator.openshift.io/v1
+                kind: ImageContentSourcePolicy
+                metadata:
+                  name: trusted-internal-registry
+                spec:
+                  repositoryDigestMirrors:
+                    - mirrors:
+                        - registry.example.com/mirror/openshift
+                      source: registry.redhat.io # Example: Mirror Red Hat images
+                    - mirrors:
+                        - registry.example.com/mirror/docker
+                      source: docker.io # Example: Mirror Docker Hub images
+---
+# Policy for BSI SYS.1.6.A8: Secure Storage of Access Data (Require Secrets for Credentials)
+# This policy encourages the use of Kubernetes Secrets for sensitive data by preventing
+# environment variables containing common credential keywords in Pods.
+# Note: This is a preventative measure; it doesn't guarantee secrets aren't hardcoded elsewhere.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-require-secrets-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A8"
+    purpose: "secure-credential-storage"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: require-secrets-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: mustnothave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                metadata:
+                  labels:
+                    # Label to exclude pods that are intentionally allowed to have sensitive env vars (e.g., system pods)
+                    # You might need to adjust this based on your environment.
+                    bsi-exempt-credentials: "true"
+                spec:
+                  containers:
+                    - name: "*"
+                      env:
+                        - name: ".*(PASSWORD|API_KEY|SECRET|TOKEN).*" # Regex to match sensitive environment variable names
+                          value: ".*" # Any value
+---
+# Policy for BSI SYS.1.6.A15: Resource Limitation per Container (Enforce Resource Quotas)
+# This policy ensures that namespaces have Resource Quotas defined to limit CPU and memory usage,
+# preventing resource exhaustion by misbehaving applications.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-enforce-resource-quotas-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A15"
+    purpose: "resource-limitation"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: enforce-resource-quotas-config
+        spec:
+          remediationAction: inform
+          severity: high
+          namespaceSelector:
+            exclude: ["kube-*", "open-cluster-management", "openshift-*", "default"] # Exclude system namespaces
+            include: ["*"] # Apply to all other namespaces
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: ResourceQuota
+                metadata:
+                  name: compute-resources
+                  namespace: "{{ .ManagedCluster.Name }}-{{ .ManagedCluster.Namespace }}" # Applies to each managed cluster's namespace
+                spec:
+                  hard:
+                    limits.cpu: "4"
+                    limits.memory: "8Gi"
+                    requests.cpu: "2"
+                    requests.memory: "4Gi"
+---
+# Policy for BSI SYS.1.6.A17 & SYS.1.6.A18: Execution of Containers Without Privileges (No Privileged Containers)
+# This policy explicitly forbids the use of privileged containers, reinforcing the principle
+# of least privilege and separation from the host system.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-no-privileged-containers-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A17, SYS.1.6.A18"
+    purpose: "no-privileged-containers"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: no-privileged-containers-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: mustnothave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                    - name: "*"
+                      securityContext:
+                        privileged: true
+---
+# Policy for BSI SYS.1.6.A19 & SYS.1.6.A23: Immutable Containers (Read-Only Root Filesystem)
+# This policy enforces that containers run with a read-only root filesystem,
+# preventing runtime modifications to the image and enhancing security.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-read-only-rootfs-policy
+  annotations:
+    bsi.controls: "SYS.1.6.A19, SYS.1.6.A23"
+    purpose: "immutable-containers"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: read-only-rootfs-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                    - name: "*"
+                      securityContext:
+                        readOnlyRootFilesystem: true
+---
+# Policy for BSI APP.4.4.A3: Identity and Authorization Management (Restrict Cluster-Admin RoleBinding)
+# This policy prevents non-system users from binding to the 'cluster-admin' ClusterRole,
+# enforcing the principle of least privilege for administrative access.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-restrict-cluster-admin-policy
+  annotations:
+    bsi.controls: "APP.4.4.A3"
+    purpose: "restrict-cluster-admin"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: restrict-cluster-admin-config
+        spec:
+          remediationAction: inform
+          severity: critical
+          object-templates:
+            - complianceType: mustnothave
+              objectDefinition:
+                apiVersion: rbac.authorization.k8s.io/v1
+                kind: ClusterRoleBinding
+                metadata:
+                  name: "*"
+                roleRef:
+                  apiGroup: rbac.authorization.k8s.io
+                  kind: ClusterRole
+                  name: cluster-admin
+                subjects:
+                  - kind: User # Prevents direct user binding
+                    name: "*"
+                    apiGroup: rbac.authorization.k8s.io
+                  - kind: Group # Prevents direct group binding
+                    name: "*"
+                    apiGroup: rbac.authorization.k8s.io
+                  # Add more specific exclusions if needed for system accounts
+---
+# Policy for BSI APP.4.4.A9: Use of Kubernetes Service Accounts (No Default Service Account)
+# This policy ensures that pods do not use the 'default' service account,
+# promoting the use of dedicated service accounts with minimal necessary permissions.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-no-default-serviceaccount-policy
+  annotations:
+    bsi.controls: "APP.4.4.A9"
+    purpose: "dedicated-service-accounts"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: no-default-serviceaccount-config
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: mustnothave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  serviceAccountName: default
+                  # You might want to add a namespaceSelector here to exclude system namespaces
+                  # namespaceSelector:
+                  #   exclude: ["kube-*", "open-cluster-management", "openshift-*", "default"]
+---
+# Policy for BSI APP.4.4.A11: Monitoring of Containers (Require Liveness and Readiness Probes)
+# This policy ensures that all containers within pods define liveness and readiness probes,
+# which are crucial for OpenShift to manage application health and availability.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-require-health-probes-policy
+  annotations:
+    bsi.controls: "APP.4.4.A11"
+    purpose: "container-health-monitoring"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: require-health-probes-config
+        spec:
+          remediationAction: inform
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                    - name: "*"
+                      livenessProbe:
+                        exec: {} # Requires an exec probe (or httpGet, tcpSocket)
+                      readinessProbe:
+                        exec: {} # Requires an exec probe (or httpGet, tcpSocket)
+---
+# Policy for BSI APP.4.4.A21: Regular Restart of Pods (Deploy OpenShift Descheduler)
+# This policy ensures that the OpenShift Descheduler operator is deployed and configured
+# to regularly restart pods, enhancing security by reducing long-running processes.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-deploy-descheduler-policy
+  annotations:
+    bsi.controls: "APP.4.4.A21"
+    purpose: "regular-pod-restarts"
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: deploy-descheduler-operator-group
+        spec:
+          remediationAction: inform
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operators.coreos.com/v1
+                kind: OperatorGroup
+                metadata:
+                  name: openshift-descheduler-operator
+                  namespace: openshift-descheduler-operator
+                spec:
+                  targetNamespaces:
+                    - openshift-descheduler-operator
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: deploy-descheduler-subscription
+        spec:
+          remediationAction: inform
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operators.coreos.com/v1alpha1
+                kind: Subscription
+                metadata:
+                  name: descheduler-operator
+                  namespace: openshift-descheduler-operator
+                spec:
+                  channel: "stable" # Or appropriate channel for your OCP version
+                  name: descheduler-operator
+                  source: redhat-operators
+                  sourceNamespace: openshift-marketplace
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+                  name: create-descheduler-instance
+        spec:
+          remediationAction: inform
+          severity: medium
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operator.openshift.io/v1
+                kind: KubeDescheduler
+                metadata:
+                  name: cluster
+                  namespace: openshift-descheduler-operator
+                spec:
+                  # Example Descheduler configuration: Evict pods older than 24 hours
+                  # Adjust strategies as per your specific requirements
+                  deschedulerProfile: "DefaultEvictor" # Use the default evictor profile
+                  # For more fine-grained control, you might need to use a custom profile
+                  # and define specific strategies within it.
+                  # This example assumes the default evictor is sufficient for the 24-hour restart.
