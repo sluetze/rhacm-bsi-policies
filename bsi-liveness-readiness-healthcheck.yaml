@@ -1,0 +1,44 @@
+# this policy currently has the drawback, that it will alert on all namespaces, even if there are no pods in the namespace.
+# this is because the policy is checking for the presence of a pod, not the presence of a liveness or readiness probe.
+# this is a known issue and will be fixed in the future.
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-require-health-probes-policy
+  annotations:
+    policy.open-cluster-management.io/categories: Availability
+    policy.open-cluster-management.io/controls: APP.4.4.A11,SYS.1.6.A3
+    policy.open-cluster-management.io/standards: BSI-APP.4.4,BSI-SYS.1.6
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: require-health-probes-config
+        spec:
+          remediationAction: inform
+          severity: medium
+          object-templates:
+            # Only alert if there is at least one Pod in the namespace
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                    - name: "*"
+                      livenessProbe: {}
+                      readinessProbe: {}
+          namespaceSelector:
+            exclude:
+              - kube-*
+              - open-cluster-management
+              - open-cluster-management-*
+              - openshift-*
+              - openshift
+              - default
+            include:
+              - "*"
