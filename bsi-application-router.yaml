@@ -1,0 +1,68 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: bsi-application-router-policy
+  annotations:
+    policy.open-cluster-management.io/categories: "network-segmentation"
+    policy.open-cluster-management.io/controls: SYS.1.6.A5
+    policy.open-cluster-management.io/standards: BSI-SYS.1.6
+spec:
+  remediationAction: inform
+  disabled: false
+  policy-templates:
+    # https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html-single/ingress_and_load_balancing/index#nw-traditional-sharding_configuring-ingress-cluster-traffic-ingress-controller
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: ensure-application-router
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operator.openshift.io/v1
+                kind: IngressController
+                metadata:
+                  name: application
+                  namespace: openshift-ingress-operator
+                spec:
+                  # Change to your desired application domain
+                  domain: applications.{{ fromClusterClaim "dns.cluster.name" }}
+                  replicas: 2
+                  endpointPublishingStrategy:
+                    type: LoadBalancerService
+                  nodePlacement: {}
+                  # this will route all traffic to namespaces with the label application: true
+                  namespaceSelector:
+                    matchLabels:
+                      application: true
+                  # Add further customization as needed for your environment
+    # https://access.redhat.com/solutions/5097511
+    # https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html-single/ingress_and_load_balancing/index#nw-ingress-sharding-default_configuring-ingress-cluster-traffic-ingress-controller
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: ensure-default-router-does-not-route-application-traffic
+        spec:
+          remediationAction: inform
+          severity: high
+          object-templates:
+            - complianceType: musthave
+              objectDefinition:
+                apiVersion: operator.openshift.io/v1
+                kind: IngressController
+                metadata:
+                  name: default
+                  namespace: openshift-ingress-operator
+                spec:
+                  # this will prevent the default router from routing traffic to namespaces with the label application: true
+                  namespaceSelector:
+                    matchExpressions:
+                      - key: application
+                        operator: NotIn
+                        values:
+                          - true
+                  # Add further customization as needed for your environment
