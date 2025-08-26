@@ -1,0 +1,79 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: sluetzen-ns-creation-raw
+  namespace: sluetzen-cluster-set
+spec:
+  disabled: false
+  policy-templates:
+    - objectDefinition:
+        apiVersion: policy.open-cluster-management.io/v1
+        kind: ConfigurationPolicy
+        metadata:
+          name: project-generator
+        spec:
+          remediationAction: inform
+          pruneObjectBehavior: DeleteIfCreated
+          severity: low
+          evaluationInterval:
+            compliant: 10m
+            noncompliant: 30s
+          object-templates-raw: |
+            {{hub $cms := (lookup "v1" "ConfigMap" "sluetzen-cluster-set" "").items hub}}
+            {{hub range $cm := $cms hub}}
+            {{hub if hasKey $cm.metadata.labels "creatorConfig" hub}}
+            {{hub if eq (index $cm.metadata.labels "creatorConfig") "true" hub}}
+            - complianceType: musthave
+              objectDefinition:
+                kind: Project
+                apiVersion: project.openshift.io/v1
+                metadata:
+                  name: {{hub $cm.data.teamname hub}}-dev
+                  labels:
+                    team: {{hub $cm.data.teamname hub}}
+                    autocreated: "true"
+                    owner: sluetzen
+            - complianceType: musthave
+              objectDefinition:
+                kind: Project
+                apiVersion: project.openshift.io/v1
+                metadata:
+                  name: {{hub $cm.data.teamname hub}}-qa
+                  labels:
+                    team: {{hub $cm.data.teamname hub}}
+                    autocreated: "true"
+                    owner: sluetzen
+            - complianceType: musthave
+              objectDefinition:
+                kind: Project
+                apiVersion: project.openshift.io/v1
+                metadata:
+                  name: {{hub $cm.data.teamname hub}}-prod
+                  labels:
+                    team: {{hub $cm.data.teamname hub}}
+                    autocreated: "true"
+                    owner: sluetzen
+            {{hub end hub}}
+            {{hub end hub}}
+            {{hub end hub}}
+  remediationAction: inform
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: testteam
+  namespace: sluetzen-cluster-set
+  labels:
+    creatorConfig: 'true'
+data:
+  teamname: sluetzen-team-01
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: testteam02
+  namespace: sluetzen-cluster-set
+  labels:
+    creatorConfig: 'true'
+data:
+  teamname: sluetzen-team-02
