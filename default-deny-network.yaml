@@ -37,6 +37,16 @@ spec:
               - open-cluster-management-*
               - openshift-*
               - default
+              - assisted-installer
+              - bsi-clusters-broker
+              - cert-manager
+              - cert-manager-operator
+              - default-broker
+              - hive
+              - hypershift
+              - keycloak
+              - local-cluster
+              - multicluster-engine
             include:
               - "*"
   remediationAction: inform
